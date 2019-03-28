@@ -1,7 +1,11 @@
+use std::hash::Hasher;
+use std::hash::Hash;
 use std::u32;
 use std::char;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 
+#[derive(Debug,Clone)]
 struct StringMatch<'a> {
     pub major_axis_distance: u32,
     pub minor_axis_distance: u32,
@@ -11,39 +15,28 @@ struct StringMatch<'a> {
 
 impl<'a> PartialEq for StringMatch<'a> {
     fn eq(&self, other: &StringMatch) -> bool {
-        self.major_axis_distance == other.major_axis_distance
-            && self.major_axis_distance == other.minor_axis_distance
+        self.index == other.index
+            && self.value == other.value
     }
 }
 
 impl<'a> Eq for StringMatch<'a> {}
 
-impl<'a> PartialOrd for StringMatch<'a> {
-    fn partial_cmp(&self, other: &StringMatch) -> Option<Ordering> {
-        Some(self.cmp(other))
+impl <'a> Hash for StringMatch<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.index.hash(state);
+        self.value.hash(state);
     }
 }
 
-impl<'a> Ord for StringMatch<'a> {
-    fn cmp(&self, other: &StringMatch) -> Ordering {
-        if self.major_axis_distance > other.major_axis_distance {
-            return Ordering::Greater;
-        } else if self.major_axis_distance < other.major_axis_distance {
-            return Ordering::Less;
-        } else {
-            if self.minor_axis_distance > other.minor_axis_distance {
-                return Ordering::Greater;
-            } else if self.minor_axis_distance < other.minor_axis_distance {
-                return Ordering::Less;
-            } else {
-                return Ordering::Equal;
-            }
-        }
-    }
-}
-
-#[derive(PartialEq, Debug)]
+#[derive( Debug)]
 pub struct MatchIndex<'a>(usize, &'a str);
+
+impl <'a> PartialEq for MatchIndex<'a> {
+    fn eq(&self, other: &MatchIndex<'a>) -> bool {
+        self.0 == other.0 && self.1 == other.1
+    }
+}
 
 pub fn get_levenshtein_distance(lhs: &str, rhs: &str) -> u32 {
     let lhs_len = lhs.chars().count();
@@ -60,7 +53,7 @@ pub fn get_levenshtein_distance(lhs: &str, rhs: &str) -> u32 {
 
     for j in 1..=rhs_len {
         for i in 1..=lhs_len {
-            let matched = if lhs.chars().nth(i - 1).unwrap() == rhs.chars().nth(j - 1).unwrap() { 0 } else { 1 };
+            let matched = if lhs.to_lowercase().chars().nth(i - 1).unwrap() == rhs.to_lowercase().chars().nth(j - 1).unwrap() { 0 } else { 1 };
 
             grid[j][i] = *vec![
                 grid[j][i - 1] + 1,
@@ -128,7 +121,7 @@ fn split_case(word: &str) -> Vec<String> {
 }
 
 pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) -> Vec<MatchIndex<'a>> {
-    let mut matches = Vec::new();
+    let mut matches = HashSet::new();
 
     //if an exact match, there is only 1
     for (i, key) in search_keys.iter().enumerate() {
@@ -140,12 +133,15 @@ pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) ->
     //next match by exact match with casing distance
     for (i, key) in search_keys.iter().enumerate() {
         if *key.to_lowercase() == term.to_lowercase() {
-            matches.push(StringMatch{
+            let found = StringMatch{
                 major_axis_distance: 1,
                 minor_axis_distance: get_cap_distance(key, term),
                 index: i,
                 value: key
-            });
+            };
+            if !matches.contains(&found) {
+                matches.insert(found);
+            }
         }
     }
 
@@ -153,27 +149,33 @@ pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) ->
     for (i, key) in search_keys.iter().enumerate() {
         let initials = to_initials(key);
         if initials.to_lowercase() == term.to_lowercase() {
-            matches.push(StringMatch{
+            let found = StringMatch{
                 major_axis_distance: 2,
                 minor_axis_distance: get_cap_distance(key, term),
                 index: i,
                 value: key
-            });
+            };
+            if !matches.contains(&found) {
+                matches.insert(found);
+            }
         }
     }
 
-    //next match by contains match weighted by how much it matched
+    //next match by case-invariant contains match weighted by how much it matched
     for (i, key) in search_keys.iter().enumerate() {
-        if key.contains(term) {
+        if key.to_lowercase().contains(&term.to_lowercase()) {
             let len = key.len();
             let distance = (len as i32 - term.len() as i32).abs();
             if distance as f32 <= len as f32 - (len as f32 * threshold) {
-                matches.push(StringMatch{
+                let found = StringMatch{
                     major_axis_distance: 3,
                     minor_axis_distance: distance as u32,
                     index: i,
                     value: key
-                });
+                };
+                if !matches.contains(&found) {
+                    matches.insert(found);
+                }
             }
         }
     }
@@ -183,25 +185,39 @@ pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) ->
         let distance = get_levenshtein_distance(key, term);
         let len = key.len();
         if distance as f32 <= len as f32 - (len as f32 * threshold) {
-            matches.push(StringMatch{
+            let found = StringMatch{
                 major_axis_distance: 4,
                 minor_axis_distance: distance,
                 index: i,
                 value: key
-            });
+            };
+            if !matches.contains(&found) {
+                matches.insert(found);
+            }
         }
     }
 
-    matches.sort();
+    let mut sorted_matches: Vec<StringMatch> = matches.iter().cloned().collect();
+    sorted_matches.sort_by(|x,y|{
+        if x.major_axis_distance > y.major_axis_distance {
+            return Ordering::Greater;
+        } else if x.major_axis_distance < y.major_axis_distance {
+            return Ordering::Less;
+        } else {
+            if x.minor_axis_distance > y.minor_axis_distance {
+                return Ordering::Greater;
+            } else if x.minor_axis_distance < y.minor_axis_distance {
+                return Ordering::Less;
+            } else {
+                return Ordering::Equal;
+            }
+        }
+    });
 
-    let mut match_indicies = matches
+    sorted_matches
         .iter()
         .map(|m| MatchIndex(m.index, m.value))
-        .collect::<Vec<MatchIndex>>();
-
-    match_indicies.dedup();
-
-    match_indicies
+        .collect::<Vec<MatchIndex>>()
 }
 
 
@@ -220,7 +236,7 @@ mod fuzzymatch_tests {
     }
 
     #[test]
-    fn levenshtein_should_get_correct_distance() {
+    fn get_levenshtein_distance_should_get_correct_distance() {
         assert_eq!(get_levenshtein_distance("x", "x"), 0);
         assert_eq!(get_levenshtein_distance("x", "y"), 1);
         assert_eq!(get_levenshtein_distance("", "x"), 1);
@@ -229,6 +245,12 @@ mod fuzzymatch_tests {
         assert_eq!(get_levenshtein_distance("abc", "abbc"), 1);
         assert_eq!(get_levenshtein_distance("book", "back"), 2);
     }
+
+    #[test]
+    fn get_levenshtein_distance_should_be_case_insensitive() {
+        assert_eq!(get_levenshtein_distance("KITteN", "mUttoN"), 3);
+    }
+
 
     #[test]
     fn fuzzymatch_should_find_exact_match(){
@@ -334,29 +356,34 @@ mod fuzzymatch_tests {
         assert_eq!(vec![MatchIndex(1, "Jungle Adventure")], fuzzymatch(&words, "ja", 0.7));
         assert_eq!(vec![MatchIndex(2, "Pacific Cruiseship")], fuzzymatch(&words, "pc", 0.7));
     }
+    
+    #[test]
+    fn exact_match_should_only_produce_a_single_result() {
+        let words = vec!["blue", "BLUE", "bLUe"];
 
-    /*
-    it("exact match should prioritize over case insensitive", () => {
-        const epics = ["blue", "BLUE", "abc"];
+        assert_eq!(vec![MatchIndex(1, "BLUE")], fuzzymatch(&words, "BLUE", 0.7));
+    }
 
-        expect(fuzzyMatch(epics, "BLUE")).toBe(1);
-    });
-    it("case insensitive match should prioritize over initials", () => {
-        const epics = ["blue", "Big Lucky Uganda", "BLu", "abc"];
+    #[test]
+    fn case_insensitive_match_should_prioritize_over_initials() {
+        let words = vec!["blue", "Big Lucky Umbrella", "BLu", "abc"];
 
-        expect(fuzzyMatch(epics, "BLU")).toBe(2);
-    });
-    it("intial match should prioritize over prefix", () => {
-        const epics = ["BARK", "Big Orange Rat", "abc"];
+        assert_eq!(vec![MatchIndex(2, "BLu"), MatchIndex(1, "Big Lucky Umbrella"), MatchIndex(0, "blue")] , fuzzymatch(&words, "BLU", 0.7));
+    }
 
-        expect(fuzzyMatch(epics, "BAR")).toBe(1);
-    });
-    it("prefix match should prioritize over edit distance match", () => {
-        const epics = ["BARKBONE", "BARB", "abc"];
+    #[test]
+    fn intial_match_should_prioritize_over_contains() {
+        let words = vec!["BORK", "Big Orange Rat", "abc"];
 
-        expect(fuzzyMatch(epics, "bark")).toBe(1);
-    });
-    */
+        assert_eq!(vec![MatchIndex(1, "Big Orange Rat"), MatchIndex(0, "BORK")], fuzzymatch(&words, "BOR", 0.7));
+    }
+
+    #[test]
+    fn contains_match_should_prioritize_over_edit_distance_match() {
+        let words = vec!["BARB", "BARKBONE", "abc"];
+
+        assert_eq!(vec![MatchIndex(1, "BARKBONE"), MatchIndex(0, "BARB")], fuzzymatch(&words, "bark", 0.4));
+    }
 
     #[test]
     fn fuzzymatch_should_fail_if_no_match(){
