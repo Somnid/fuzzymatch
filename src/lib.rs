@@ -1,39 +1,45 @@
+extern crate wasm_bindgen;
+extern crate serde_derive;
+
+use wasm_bindgen::prelude::*;
 use std::hash::Hasher;
 use std::hash::Hash;
 use std::u32;
 use std::char;
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use serde_derive::{Serialize, Deserialize};
 
 #[derive(Debug,Clone)]
-struct StringMatch<'a> {
+struct StringMatch {
     pub major_axis_distance: u32,
     pub minor_axis_distance: u32,
     pub index: usize,
-    pub value: &'a str
+    pub value: String
 }
 
-impl<'a> PartialEq for StringMatch<'a> {
+impl PartialEq for StringMatch {
     fn eq(&self, other: &StringMatch) -> bool {
         self.index == other.index
             && self.value == other.value
     }
 }
 
-impl<'a> Eq for StringMatch<'a> {}
+impl Eq for StringMatch {}
 
-impl <'a> Hash for StringMatch<'a> {
+impl Hash for StringMatch {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.index.hash(state);
         self.value.hash(state);
     }
 }
 
-#[derive( Debug)]
-pub struct MatchIndex<'a>(usize, &'a str);
+#[wasm_bindgen]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MatchIndex(usize, String);
 
-impl <'a> PartialEq for MatchIndex<'a> {
-    fn eq(&self, other: &MatchIndex<'a>) -> bool {
+impl PartialEq for MatchIndex {
+    fn eq(&self, other: &MatchIndex) -> bool {
         self.0 == other.0 && self.1 == other.1
     }
 }
@@ -120,24 +126,29 @@ fn split_case(word: &str) -> Vec<String> {
     words
 }
 
-pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) -> Vec<MatchIndex<'a>> {
+#[wasm_bindgen]
+pub fn fuzzymatchjs(search_keys: &JsValue, term: String, threshold: f32) -> JsValue {
+    JsValue::from_serde(&fuzzymatch(search_keys.into_serde().unwrap(), term, threshold)).unwrap()
+}
+
+fn fuzzymatch(search_keys: Vec<String>, term: String, threshold: f32) -> Vec<MatchIndex> {
     let mut matches = HashSet::new();
 
     //if an exact match, there is only 1
     for (i, key) in search_keys.iter().enumerate() {
         if *key == term {
-            return vec![MatchIndex(i, key)];
+            return vec![MatchIndex(i, key.clone())];
         }
     }
 
     //next match by exact match with casing distance
     for (i, key) in search_keys.iter().enumerate() {
-        if *key.to_lowercase() == term.to_lowercase() {
+        if key.to_lowercase() == term.to_lowercase() {
             let found = StringMatch{
                 major_axis_distance: 1,
-                minor_axis_distance: get_cap_distance(key, term),
+                minor_axis_distance: get_cap_distance(key, &term),
                 index: i,
-                value: key
+                value: key.clone()
             };
             if !matches.contains(&found) {
                 matches.insert(found);
@@ -151,9 +162,9 @@ pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) ->
         if initials.to_lowercase() == term.to_lowercase() {
             let found = StringMatch{
                 major_axis_distance: 2,
-                minor_axis_distance: get_cap_distance(key, term),
+                minor_axis_distance: get_cap_distance(key, &term),
                 index: i,
-                value: key
+                value: key.clone()
             };
             if !matches.contains(&found) {
                 matches.insert(found);
@@ -171,7 +182,7 @@ pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) ->
                     major_axis_distance: 3,
                     minor_axis_distance: distance as u32,
                     index: i,
-                    value: key
+                    value: key.clone()
                 };
                 if !matches.contains(&found) {
                     matches.insert(found);
@@ -182,14 +193,14 @@ pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) ->
     
     //next match by levenshtien distance
     for (i, key) in search_keys.iter().enumerate() {
-        let distance = get_levenshtein_distance(key, term);
+        let distance = get_levenshtein_distance(key, &term);
         let len = key.len();
         if distance as f32 <= len as f32 - (len as f32 * threshold) {
             let found = StringMatch{
                 major_axis_distance: 4,
                 minor_axis_distance: distance,
                 index: i,
-                value: key
+                value: key.clone()
             };
             if !matches.contains(&found) {
                 matches.insert(found);
@@ -216,7 +227,7 @@ pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) ->
 
     sorted_matches
         .iter()
-        .map(|m| MatchIndex(m.index, m.value))
+        .map(|m| MatchIndex(m.index, m.value.clone()))
         .collect::<Vec<MatchIndex>>()
 }
 
@@ -224,6 +235,15 @@ pub fn fuzzymatch<'a>(search_keys: &Vec<&'a str>, term: &str, threshold: f32) ->
 #[cfg(test)]
 mod fuzzymatch_tests {
     use super::*;
+
+    macro_rules! vec_of_strings {
+        // match a list of expressions separated by comma:
+        ($($str:expr),*) => ({
+            // create a Vec with this list of expressions,
+            // calling String::from on each:
+            vec![$(String::from($str),)*] as Vec<String>
+        });
+    }
 
     #[test]
     fn split_case_should_split_on_camel_case(){
@@ -254,140 +274,140 @@ mod fuzzymatch_tests {
 
     #[test]
     fn fuzzymatch_should_find_exact_match(){
-        let words = vec!["foo", "bar", "abc"];
+        let words = vec_of_strings!["foo", "bar", "abc"];
 
-        assert_eq!(vec![MatchIndex(0, "foo")], fuzzymatch(&words, "foo", 0.7));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "bar", 0.7));
+        assert_eq!(vec![MatchIndex(0, String::from("foo"))], fuzzymatch(&words, String::from("foo"), 0.7));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("bar"), 0.7));
     }
 
     #[test]
     fn should_match_a_character_insertion(){
-        let words = vec!["foo", "bar", "zzz"];
+        let words = vec_of_strings!["foo", "bar", "zzz"];
 
-        assert_eq!(vec![MatchIndex(0, "foo")], fuzzymatch(&words, "foos", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "bars", 0.5));
-        assert_eq!(vec![MatchIndex(0, "foo")], fuzzymatch(&words, "afoo", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "abar", 0.5));
-        assert_eq!(vec![MatchIndex(0, "foo")], fuzzymatch(&words, "fo.o", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "b.ar", 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("foo"))], fuzzymatch(&words, String::from("foos"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("bars"), 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("foo"))], fuzzymatch(&words, String::from("afoo"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("abar"), 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("foo"))], fuzzymatch(&words, String::from("fo.o"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("b.ar"), 0.5));
     }
 
     #[test]
     fn should_match_a_character_deletion() {
-        let words = vec!["qux", "bar", "zzz"];
+        let words = vec_of_strings!["qux", "bar", "zzz"];
 
-        assert_eq!(vec![MatchIndex(0, "qux")], fuzzymatch(&words, "qu", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "ba", 0.5));
-        assert_eq!(vec![MatchIndex(0, "qux")], fuzzymatch(&words, "ux", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "ar", 0.5));
-        assert_eq!(vec![MatchIndex(0, "qux")], fuzzymatch(&words, "qx", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "br", 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("qux"))], fuzzymatch(&words, String::from("qu"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("ba"), 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("qux"))], fuzzymatch(&words, String::from("ux"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("ar"), 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("qux"))], fuzzymatch(&words, String::from("qx"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("br"), 0.5));
     }
 
     #[test]
     fn should_match_a_character_swap() {
-        let words = vec!["qux", "bar", "zzz"];
+        let words = vec_of_strings!["qux", "bar", "zzz"];
 
-        assert_eq!(vec![MatchIndex(0, "qux")], fuzzymatch(&words, "quk", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "bam", 0.5));
-        assert_eq!(vec![MatchIndex(0, "qux")], fuzzymatch(&words, "lux", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "car", 0.5));
-        assert_eq!(vec![MatchIndex(0, "qux")], fuzzymatch(&words, "qix", 0.5));
-        assert_eq!(vec![MatchIndex(1, "bar")], fuzzymatch(&words, "bor", 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("qux"))], fuzzymatch(&words, String::from("quk"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("bam"), 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("qux"))], fuzzymatch(&words, String::from("lux"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("car"), 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("qux"))], fuzzymatch(&words, String::from("qix"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("bar"))], fuzzymatch(&words, String::from("bor"), 0.5));
     }
 
     #[test]
     fn edit_distance_should_be_prioritized() {
-        let words = vec!["candyjake", "candyjane", "abc"];
+        let words = vec_of_strings!["candyjake", "candyjane", "abc"];
 
-        assert_eq!(vec![MatchIndex(1, "candyjane"), MatchIndex(0, "candyjake")], fuzzymatch(&words, "candycane", 0.7));
+        assert_eq!(vec![MatchIndex(1, String::from("candyjane")), MatchIndex(0, String::from("candyjake"))], fuzzymatch(&words, String::from("candycane"), 0.7));
     }
 
     #[test]
     fn should_not_match_if_under_threshold() {
-        let words = vec!["applehorse", "pearcat", "grapechicken", "abc"];
+        let words = vec_of_strings!["applehorse", "pearcat", "grapechicken", "abc"];
 
-        assert_eq!(Vec::<MatchIndex>::new(), fuzzymatch(&words, "applecat", 0.8));
-        assert_eq!(Vec::<MatchIndex>::new(), fuzzymatch(&words, "pearchicken", 0.8));
-        assert_eq!(Vec::<MatchIndex>::new(), fuzzymatch(&words, "grapehorse", 0.8));
+        assert_eq!(Vec::<MatchIndex>::new(), fuzzymatch(&words, String::from("applecat"), 0.8));
+        assert_eq!(Vec::<MatchIndex>::new(), fuzzymatch(&words, String::from("pearchicken"), 0.8));
+        assert_eq!(Vec::<MatchIndex>::new(), fuzzymatch(&words, String::from("grapehorse"), 0.8));
     }
 
     #[test]
     fn should_match_string_that_contains() {
-        let words = vec!["applehorse", "pearcat", "grapechicken", "abc"];
+        let words = vec_of_strings!["applehorse", "pearcat", "grapechicken", "abc"];
 
-        assert_eq!(vec![MatchIndex(0, "applehorse")], fuzzymatch(&words, "appleh", 0.5));
-        assert_eq!(vec![MatchIndex(1, "pearcat")], fuzzymatch(&words, "pearc", 0.5));
-        assert_eq!(vec![MatchIndex(2, "grapechicken")], fuzzymatch(&words, "grapec", 0.5));
+        assert_eq!(vec![MatchIndex(0, String::from("applehorse"))], fuzzymatch(&words, String::from("appleh"), 0.5));
+        assert_eq!(vec![MatchIndex(1, String::from("pearcat"))], fuzzymatch(&words, String::from("pearc"), 0.5));
+        assert_eq!(vec![MatchIndex(2, String::from("grapechicken"))], fuzzymatch(&words, String::from("grapec"), 0.5));
     }
 
     #[test]
     fn should_match_initals_with_caps() {
-        let words = vec!["Fuzzy Match", "Jungle Adventure", "Pacific Cruiseship", "Desert Airway"];
+        let words = vec_of_strings!["Fuzzy Match", "Jungle Adventure", "Pacific Cruiseship", "Desert Airway"];
 
-        assert_eq!(vec![MatchIndex(0, "Fuzzy Match")], fuzzymatch(&words, "FM", 0.7));
-        assert_eq!(vec![MatchIndex(1, "Jungle Adventure")], fuzzymatch(&words, "JA", 0.7));
-        assert_eq!(vec![MatchIndex(2, "Pacific Cruiseship")], fuzzymatch(&words, "PC", 0.7));
+        assert_eq!(vec![MatchIndex(0, String::from("Fuzzy Match"))], fuzzymatch(&words, String::from("FM"), 0.7));
+        assert_eq!(vec![MatchIndex(1, String::from("Jungle Adventure"))], fuzzymatch(&words, String::from("JA"), 0.7));
+        assert_eq!(vec![MatchIndex(2, String::from("Pacific Cruiseship"))], fuzzymatch(&words, String::from("PC"), 0.7));
     }
 
     #[test]
     fn should_match_case_invariant_initals_with_caps() {
-        let words = vec!["fuzzy match", "jungle adventure", "pacific cruiseship", "desert airway"];
+        let words = vec_of_strings!["fuzzy match", "jungle adventure", "pacific cruiseship", "desert airway"];
 
-        assert_eq!(vec![MatchIndex(0, "fuzzy match")], fuzzymatch(&words, "FM", 0.7));
-        assert_eq!(vec![MatchIndex(1, "jungle adventure")], fuzzymatch(&words, "JA", 0.7));
-        assert_eq!(vec![MatchIndex(2, "pacific cruiseship")], fuzzymatch(&words, "PC", 0.7));
+        assert_eq!(vec![MatchIndex(0, String::from("fuzzy match"))], fuzzymatch(&words, String::from("FM"), 0.7));
+        assert_eq!(vec![MatchIndex(1, String::from("jungle adventure"))], fuzzymatch(&words, String::from("JA"), 0.7));
+        assert_eq!(vec![MatchIndex(2, String::from("pacific cruiseship"))], fuzzymatch(&words, String::from("PC"), 0.7));
     }
 
     #[test]
     fn should_match_title_case_initals_with_caps() {
-        let words = vec!["FuzzyMatch", "JungleAdventure", "PacificCruiseship", "DesertAirway"];
+        let words = vec_of_strings!["FuzzyMatch", "JungleAdventure", "PacificCruiseship", "DesertAirway"];
 
-        assert_eq!(vec![MatchIndex(0, "FuzzyMatch")], fuzzymatch(&words, "FM", 0.7));
-        assert_eq!(vec![MatchIndex(1, "JungleAdventure")], fuzzymatch(&words, "JA", 0.7));
-        assert_eq!(vec![MatchIndex(3, "DesertAirway")], fuzzymatch(&words, "DA", 0.7));
+        assert_eq!(vec![MatchIndex(0, String::from("FuzzyMatch"))], fuzzymatch(&words, String::from("FM"), 0.7));
+        assert_eq!(vec![MatchIndex(1, String::from("JungleAdventure"))], fuzzymatch(&words, String::from("JA"), 0.7));
+        assert_eq!(vec![MatchIndex(3, String::from("DesertAirway"))], fuzzymatch(&words, String::from("DA"), 0.7));
     }
 
     #[test]
     fn should_match_initals_with_lowercase() {
-        let words = vec!["Fuzzy Match", "Jungle Adventure", "Pacific Cruiseship", "Desert Airway"];
+        let words = vec_of_strings!["Fuzzy Match", "Jungle Adventure", "Pacific Cruiseship", "Desert Airway"];
 
-        assert_eq!(vec![MatchIndex(0, "Fuzzy Match")], fuzzymatch(&words, "fm", 0.7));
-        assert_eq!(vec![MatchIndex(1, "Jungle Adventure")], fuzzymatch(&words, "ja", 0.7));
-        assert_eq!(vec![MatchIndex(2, "Pacific Cruiseship")], fuzzymatch(&words, "pc", 0.7));
+        assert_eq!(vec![MatchIndex(0, String::from("Fuzzy Match"))], fuzzymatch(&words, String::from("fm"), 0.7));
+        assert_eq!(vec![MatchIndex(1, String::from("Jungle Adventure"))], fuzzymatch(&words, String::from("ja"), 0.7));
+        assert_eq!(vec![MatchIndex(2, String::from("Pacific Cruiseship"))], fuzzymatch(&words, String::from("pc"), 0.7));
     }
     
     #[test]
     fn exact_match_should_only_produce_a_single_result() {
-        let words = vec!["blue", "BLUE", "bLUe"];
+        let words = vec_of_strings!["blue", "BLUE", "bLUe"];
 
-        assert_eq!(vec![MatchIndex(1, "BLUE")], fuzzymatch(&words, "BLUE", 0.7));
+        assert_eq!(vec![MatchIndex(1, String::from("BLUE"))], fuzzymatch(&words, String::from("BLUE"), 0.7));
     }
 
     #[test]
     fn case_insensitive_match_should_prioritize_over_initials() {
-        let words = vec!["blue", "Big Lucky Umbrella", "BLu", "abc"];
+        let words = vec_of_strings!["blue", "Big Lucky Umbrella", "BLu", "abc"];
 
-        assert_eq!(vec![MatchIndex(2, "BLu"), MatchIndex(1, "Big Lucky Umbrella"), MatchIndex(0, "blue")] , fuzzymatch(&words, "BLU", 0.7));
+        assert_eq!(vec![MatchIndex(2, String::from("BLu")), MatchIndex(1, String::from("Big Lucky Umbrella")), MatchIndex(0, String::from("blue"))] , fuzzymatch(&words, String::from("BLU"), 0.7));
     }
 
     #[test]
     fn intial_match_should_prioritize_over_contains() {
-        let words = vec!["BORK", "Big Orange Rat", "abc"];
+        let words = vec_of_strings!["BORK", "Big Orange Rat", "abc"];
 
-        assert_eq!(vec![MatchIndex(1, "Big Orange Rat"), MatchIndex(0, "BORK")], fuzzymatch(&words, "BOR", 0.7));
+        assert_eq!(vec![MatchIndex(1, String::from("Big Orange Rat")), MatchIndex(0, String::from("BORK"))], fuzzymatch(&words, String::from("BOR"), 0.7));
     }
 
     #[test]
     fn contains_match_should_prioritize_over_edit_distance_match() {
-        let words = vec!["BARB", "BARKBONE", "abc"];
+        let words = vec_of_strings!["BARB", "BARKBONE", "abc"];
 
-        assert_eq!(vec![MatchIndex(1, "BARKBONE"), MatchIndex(0, "BARB")], fuzzymatch(&words, "bark", 0.4));
+        assert_eq!(vec![MatchIndex(1, String::from("BARKBONE")), MatchIndex(0, String::from("BARB"))], fuzzymatch(&words, String::from("bark"), 0.4));
     }
 
     #[test]
     fn fuzzymatch_should_fail_if_no_match(){
-        let words = vec!["apple", "pear", "banana", "orange"];
-        assert_eq!(Vec::<MatchIndex>::new(), fuzzymatch(&words, "melon", 0.7));
+        let words = vec_of_strings!["apple", "pear", "banana", "orange"];
+        assert_eq!(Vec::<MatchIndex>::new(), fuzzymatch(&words, String::from("melon"), 0.7));
     }
 }

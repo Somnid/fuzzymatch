@@ -1,7 +1,16 @@
 [package]
 name = "fuzzymatch"
 version = "0.1.0"
-authors = ["somnid <omnidestroyer@gmail.com>"]
+authors = ["somnid"]
 edition = "2018"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
+serde = "^1.0.59"
+serde_derive = "^1.0.59"
+
+[dependencies.wasm-bindgen]
+version = "0.2.40"
+features = ["serde-serialize"]
