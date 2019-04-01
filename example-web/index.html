@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>Fuzzymatch</title>
+		<link rel="manifest" href="manifest.json">
+		<link rel="stylesheet" href="css/index.css"></link>
+		<meta charset="utf-8" />
+		<link rel="icon" href="img/icon32x32.png" type="image/png" />
+	</head>
+	<body>
+		<app-root>
+            <div>
+                <input placeholder="Search" id="input" />
+                <div id="output"></div>
+            </div>
+        </app-root>
+		<service-worker url="service-worker.js" scope="./"></service-worker>
+		<script type="module" src="js/components/service-worker.js"></script>
+		<script type="module" src="js/components/app-root.js"></script>
+	</body>
+</html>
