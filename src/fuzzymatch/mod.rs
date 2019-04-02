@@ -82,8 +82,9 @@ fn get_cap_distance(lhs: &str, rhs: &str) -> u32 {
 }
 fn to_initials(word: &str) -> String {
     word.split_whitespace()
-        .filter(|w| !w.is_empty())
+        .flat_map(|w| w.split(|c: char| !c.is_alphanumeric()))
         .flat_map(|w| split_case(w))
+        .filter(|w| !w.is_empty())
         .map(|w| w.chars().nth(0).unwrap())
         .collect::<String>()
         .to_uppercase()
@@ -355,6 +356,51 @@ mod fuzzymatch_tests {
             fuzzymatch(&words, "PC", 0.7)
         );
     }
+
+    #[test]
+    fn should_match_kebab_initials() {
+        let words = vec![
+            "fuzzy-match",
+            "jungle-adventure",
+            "pacific-cruiseship",
+            "desert-airway",
+        ];
+        assert_eq!(
+            vec![MatchIndex(0, "fuzzy-match")],
+            fuzzymatch(&words, "FM", 0.7)
+        );
+        assert_eq!(
+            vec![MatchIndex(1, "jungle-adventure")],
+            fuzzymatch(&words, "JA", 0.7)
+        );
+        assert_eq!(
+            vec![MatchIndex(2, "pacific-cruiseship")],
+            fuzzymatch(&words, "PC", 0.7)
+        );
+    }
+
+        #[test]
+    fn should_match_snake_initials() {
+        let words = vec![
+            "fuzzy_match",
+            "jungle_adventure",
+            "pacific_cruiseship",
+            "desert_airway",
+        ];
+        assert_eq!(
+            vec![MatchIndex(0, "fuzzy_match")],
+            fuzzymatch(&words, "FM", 0.7)
+        );
+        assert_eq!(
+            vec![MatchIndex(1, "jungle_adventure")],
+            fuzzymatch(&words, "JA", 0.7)
+        );
+        assert_eq!(
+            vec![MatchIndex(2, "pacific_cruiseship")],
+            fuzzymatch(&words, "PC", 0.7)
+        );
+    }
+
     #[test]
     fn should_match_title_case_initals_with_caps() {
         let words = vec![

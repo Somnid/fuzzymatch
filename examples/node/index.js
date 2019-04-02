@@ -1,4 +1,4 @@
-const { fuzzymatch } = require("../pkg-node/fuzzymatch.js");
+const { fuzzymatch } = require("../../pkg-node/fuzzymatch.js");
 const titles = require("./titles.js");
 
 const term = process.argv[2];

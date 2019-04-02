@@ -2,3 +2,4 @@
 **/*.rs.bk
 /pkg-web
 /pkg-node
+*/node_modules

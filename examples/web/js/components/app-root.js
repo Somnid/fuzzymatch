@@ -1,4 +1,4 @@
-import initWasm, { fuzzymatch } from "../../../pkg-web/fuzzymatch.js";
+import initWasm, { fuzzymatch } from "../../../../pkg-web/fuzzymatch.js";
 import { titles } from "../data/titles.js";
 
 customElements.define("app-root",
