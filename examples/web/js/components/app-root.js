@@ -1,4 +1,4 @@
-import initWasm, { fuzzymatch } from "../../../../pkg-web/fuzzymatch.js";
+import initWasm, { fuzzymatch } from "../../../../crate/dist/pkg-web/fuzzymatch.js";
 import { titles } from "../data/titles.js";
 
 customElements.define("app-root",
@@ -17,7 +17,7 @@ customElements.define("app-root",
 		async connectedCallback(){
 			this.cacheDom();
 			this.attachEvents();
-			this.fuzzymatchPromise = initWasm("/pkg-web/fuzzymatch_bg.wasm");
+			this.fuzzymatchPromise = initWasm("/crate/dist/pkg-web/fuzzymatch_bg.wasm");
 		}
 		cacheDom(){
 			this.dom = {
